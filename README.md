@@ -2,6 +2,20 @@
 
 This guide is written as an exact build sequence so a new user can follow it without guessing.
 
+## Index
+
+1. [0) What you are building](#0-what-you-are-building)
+2. [1) Prerequisites](#1-prerequisites)
+3. [2) Create Dataverse table (exact schema first)](#2-create-dataverse-table-exact-schema-first)
+4. [3) Create Entra app for Message Center (Graph app-only)](#3-create-entra-app-for-message-center-graph-app-only)
+5. [4) Build Flow A: Copilot Updates - Collector](#4-build-flow-a-copilot-updates---collector)
+6. [5) Build Flow B: Copilot Updates - Daily Change Notifier](#5-build-flow-b-copilot-updates---daily-change-notifier)
+7. [6) Copilot Studio agent: Copilot Updates Analyst](#6-copilot-studio-agent-copilot-updates-analyst)
+8. [7) Switch digest from daily to weekly](#7-switch-digest-from-daily-to-weekly)
+9. [8) End-to-end validation (run in this order)](#8-end-to-end-validation-run-in-this-order)
+10. [Appendix A: Common issues and fixes (not a build step)](#appendix-a-common-issues-and-fixes-not-a-build-step)
+11. [Appendix B: Artifacts used in this lab](#appendix-b-artifacts-used-in-this-lab)
+
 ## 0) What you are building
 
 You will build one solution with:
