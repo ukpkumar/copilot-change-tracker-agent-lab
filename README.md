@@ -1,52 +1,63 @@
-# Lab Guide (Step-by-step): Copilot Updates Tracker with Dataverse, Power Automate, and Copilot Studio
+# Lab: Build a Copilot Updates Tracker (Dataverse + Power Automate + Copilot Studio)
 
-This guide is written as an exact build sequence so a new user can follow it without guessing.
+## Key concepts before you build
 
-## Index
+This lab uses a split design:
 
-1. [0) What you are building](#0-what-you-are-building)
-2. [1) Prerequisites](#1-prerequisites)
-3. [2) Create Dataverse table (exact schema first)](#2-create-dataverse-table-exact-schema-first)
-4. [3) Create Entra app for Message Center (Graph app-only)](#3-create-entra-app-for-message-center-graph-app-only)
-5. [4) Build Flow A: Copilot Updates - Collector](#4-build-flow-a-copilot-updates---collector)
-6. [5) Build Flow B: Copilot Updates - Daily Change Notifier](#5-build-flow-b-copilot-updates---daily-change-notifier)
-7. [6) Copilot Studio agent: Copilot Updates Analyst](#6-copilot-studio-agent-copilot-updates-analyst)
-8. [7) Switch digest from daily to weekly](#7-switch-digest-from-daily-to-weekly)
-9. [8) End-to-end validation (run in this order)](#8-end-to-end-validation-run-in-this-order)
-10. [Appendix A: Common issues and fixes (not a build step)](#appendix-a-common-issues-and-fixes-not-a-build-step)
-11. [Appendix B: Artifacts used in this lab](#appendix-b-artifacts-used-in-this-lab)
+- **Flow A (Collector):** ingest updates from Roadmap + Message Center and upsert into Dataverse
+- **Flow B (Notifier):** detect changes and send an HTML digest email
+- **Copilot Studio agent:** let users query the same dataset and optionally send on-demand email
 
-## 0) What you are building
+This separation makes ingestion reliable and keeps the agent focused on user interaction.
 
-You will build one solution with:
+## Scenario
 
-1. **Flow A** `Copilot Updates - Collector` (scheduled ingestion + Dataverse upsert)
-2. **Flow B** `Copilot Updates - Daily Change Notifier` (daily/weekly digest email)
-3. **Copilot Studio agent** `Copilot Updates Analyst` (query + optional on-demand email)
+You are implementing an internal Copilot updates tracker. The system should:
 
-```mermaid
-flowchart LR
-  A[Roadmap API] --> C[Flow A: Collector]
-  B[Graph Message Center] --> C
-  C --> D[(Dataverse: Copilot Update table)]
-  D --> E[Flow B: Daily/Weekly Notifier]
-  E --> F[Email digest: 3 columns]
-  D --> G[Copilot Studio Agent]
-  G --> H[User asks for updates]
-```
+1. Collect updates from Microsoft sources
+2. Store normalized records in Dataverse
+3. Detect new/changed records
+4. Send digest emails in a clean 3-column format
+5. Expose the same information through a Copilot Studio agent
+
+## Lab outcomes
+
+By the end of this lab, you will have:
+
+- Dataverse table `Copilot Update` with deterministic upsert keying
+- `Copilot Updates - Collector` flow running on schedule
+- `Copilot Updates - Daily Change Notifier` flow sending digest emails
+- `Copilot Updates Analyst` agent configured with Dataverse and email tools
 
 ---
 
-## 1) Prerequisites
+## Table of contents
+
+1. [Exercise 1 - Prerequisites and setup values](#exercise-1---prerequisites-and-setup-values)
+2. [Exercise 2 - Create Dataverse table](#exercise-2---create-dataverse-table)
+3. [Exercise 3 - Create Entra app (Message Center)](#exercise-3---create-entra-app-message-center)
+4. [Exercise 4 - Build Flow A: Collector](#exercise-4---build-flow-a-collector)
+5. [Exercise 5 - Build Flow B: Notifier](#exercise-5---build-flow-b-notifier)
+6. [Exercise 6 - Configure Copilot Studio agent](#exercise-6---configure-copilot-studio-agent)
+7. [Exercise 7 - Switch digest to weekly](#exercise-7---switch-digest-to-weekly)
+8. [Exercise 8 - Validate end-to-end](#exercise-8---validate-end-to-end)
+9. [Appendix A - Common issues and fixes](#appendix-a---common-issues-and-fixes)
+10. [Appendix B - Artifacts used](#appendix-b---artifacts-used)
+
+---
+
+## Exercise 1 - Prerequisites and setup values
+
+### Step 1: Confirm access
 
 You need:
 
 - Power Apps + Power Automate + Copilot Studio access
-- Permission to create Dataverse tables and cloud flows
-- Entra app registration permission (or admin help)
-- Graph application permission consent for `ServiceMessage.Read.All`
+- Permission to create Dataverse tables and flows
+- Permission (or admin help) to create Entra app registrations
+- Ability to grant Graph application consent
 
-Tenant placeholders used in this guide:
+### Step 2: Capture setup placeholders
 
 - `<TENANT_ID>`
 - `<CLIENT_ID>`
@@ -56,87 +67,94 @@ Tenant placeholders used in this guide:
 
 ---
 
-## 2) Create Dataverse table (exact schema first)
+## Exercise 2 - Create Dataverse table
 
-Create one canonical table:
+### Step 1: Create canonical table
 
 - **Display name:** `Copilot Update`
 - **Logical name:** `<DATAVERSE_TABLE_LOGICAL_NAME>`
 
-Create these columns (logical names may vary by environment prefix):
+### Step 2: Create columns
 
 | Display name | Type | Purpose |
 |---|---|---|
-| UpdateKey | Single line of text | Unique key for upsert (`roadmap-...` or `mc-...`) |
-| External Id | Single line of text | Native source id |
+| UpdateKey | Single line of text | Unique upsert key (`roadmap-...` or `mc-...`) |
+| External Id | Single line of text | Source record id |
 | Source | Choice/Text | `Roadmap` or `MessageCenter` |
 | Title | Multiple lines of text | Brief title |
-| Description | Multiple lines of text | Details used in email |
-| Record Hash | Single line of text | Detect change |
-| Previous Hash | Single line of text | Keep last version hash |
+| Description | Multiple lines of text | Update details |
+| Record Hash | Single line of text | Detect content changes |
+| Previous Hash | Single line of text | Keep prior hash |
 | Change Type | Choice/Text | `New`, `Updated`, `Unchanged` |
-| Last Seen On | Date and time | Last collector observation |
-| Last Change On | Date and time | Last detected content change |
-| Last Notified On | Date and time | Last digest send timestamp |
+| Last Seen On | Date/time | Last collector run touch |
+| Last Change On | Date/time | Last detected content change |
+| Last Notified On | Date/time | Last email send time |
 
-Create alternate key:
+### Step 3: Create alternate key
 
 - **Key name:** `UpdateKey Key`
 - **Column:** `UpdateKey`
 
 ---
 
-## 3) Create Entra app for Message Center (Graph app-only)
+## Exercise 3 - Create Entra app (Message Center)
 
-1. Go to **Microsoft Entra admin center** -> **App registrations** -> **New registration**  
-   Name: `Copilot-Updates-Collector`
-2. In **API permissions** -> **Add a permission** -> **Microsoft Graph** -> **Application permissions**
-3. Add `ServiceMessage.Read.All`
-4. Click **Grant admin consent**
-5. In **Certificates & secrets**, create a client secret and save:
-   - Tenant ID
-   - Client ID
-   - Client secret value
+### Step 1: Register app
+
+In Microsoft Entra admin center:
+
+1. **App registrations** -> **New registration**
+2. Name: `Copilot-Updates-Collector`
+
+### Step 2: Add Graph permission
+
+1. **API permissions** -> **Add a permission** -> **Microsoft Graph** -> **Application permissions**
+2. Add `ServiceMessage.Read.All`
+3. Grant admin consent
+
+### Step 3: Create secret
+
+From **Certificates & secrets**, create a client secret and store:
+
+- Tenant ID
+- Client ID
+- Client secret value
 
 ---
 
-## 4) Build Flow A: `Copilot Updates - Collector`
+## Exercise 4 - Build Flow A: Collector
 
-### 4.1 Create flow shell
+Flow name: `Copilot Updates - Collector`
 
-1. Power Automate -> **Create** -> **Scheduled cloud flow**
-2. Name: `Copilot Updates - Collector`
-3. Start with frequency every 6 hours (adjust later)
+### Step 1: Create schedule trigger
 
-### 4.2 Add source HTTP actions
+Create a scheduled cloud flow with a 6-hour recurrence.
 
-1. Add **HTTP** action for Roadmap source (`HTTP`)
-2. Add **HTTP** action for Message Center (`HTTP_1`) using app-only OAuth:
-   - Audience: `https://graph.microsoft.com`
+### Step 2: Add source HTTP actions
+
+1. `HTTP` (Roadmap source)
+2. `HTTP_1` (Message Center via Graph app-only)
    - Endpoint:
      `https://graph.microsoft.com/v1.0/admin/serviceAnnouncement/messages?$top=100`
-   - Tenant/client/secret from Step 3
 
-### 4.3 Add the exact loop input expression (critical)
+### Step 3: Configure Apply to each input (exact expression)
 
-Add **Apply to each** and set input from **Expression** (not plain text):
+In **Apply to each**, use Expression mode:
 
 ```text
 @union(coalesce(body('HTTP')?['value'], json('[]')), coalesce(body('HTTP_1')?['value'], json('[]')))
 ```
 
-This must be entered from the Expression tab. If typed as literal text, the loop breaks with type String errors.
+### Step 4: Compose identity and change hash
 
-### 4.4 Inside Apply to each: compose fields
+Add `Compose - UpdateKey`:
 
-Add **Compose** actions:
-
-1. **Compose - UpdateKey**
 ```text
 @if(equals(coalesce(item()?['source'],'Roadmap'),'MessageCenter'), concat('mc-', string(item()?['id'])), concat('roadmap-', string(item()?['id'])))
 ```
 
-2. **Compose - RecordHash** (use fields you mapped in your normalization)
+Add `Compose - RecordHash`:
+
 ```text
 @concat(
   coalesce(item()?['title'],''),
@@ -149,76 +167,59 @@ Add **Compose** actions:
 )
 ```
 
-> If your normalized object uses different property names, keep the same pattern and replace field names only.
+### Step 5: Add Dataverse lookup
 
-### 4.5 Dataverse lookup (must include primary key)
+Add **List rows** on `Copilot Update`:
 
-Add **Dataverse - List rows**:
-
-- Table: `Copilot Update`
-- Filter rows (replace logical name with your own):
+- Filter rows:
 ```text
 cra2f_updatekey eq '@{outputs('Compose_-_UpdateKey')}'
 ```
 - Top count: `1`
-- Select columns: include **primary key logical name** + `recordhash`
+- Select columns must include primary key + hash
 
-Example select:
+Example:
+
 ```text
 cra2f_copilotupdateid,cra2f_recordhash,cra2f_updatekey
 ```
 
-### 4.6 Upsert logic
+### Step 6: Add upsert branches
 
-Add conditions:
+1. If no row found (`length(...) = 0`) -> **Add a new row** (`Change Type = New`)
+2. Else compare hashes:
+   - Changed -> **Update a row** (`Change Type = Updated`)
+   - Same -> **Update a row** (`Change Type = Unchanged`)
 
-1. If `length(body('List_rows')?['value'])` equals `0` -> **Add a new row** (`Change Type = New`)
-2. Else compare `RecordHash` vs existing hash:
-   - Different -> **Update a row** (`Change Type = Updated`, move previous hash)
-   - Same -> **Update a row** (`Change Type = Unchanged`, update Last Seen On only)
-
-For **Update a row**:
-
-- **Row ID** must map to Dataverse unique identifier from List rows result
-- Do not map Row ID to External Id
-- Do not leave Row ID expression empty
+For `Update a row`, map **Row ID** to Dataverse unique identifier from `List rows` output.
 
 ---
 
-## 5) Build Flow B: `Copilot Updates - Daily Change Notifier`
+## Exercise 5 - Build Flow B: Notifier
 
-### 5.1 Create flow shell
+Flow name: `Copilot Updates - Daily Change Notifier`
 
-1. Create scheduled flow named `Copilot Updates - Daily Change Notifier`
-2. Start with daily recurrence (you can switch to weekly later)
+### Step 1: Create schedule trigger
 
-### 5.2 Query changed records
+Create scheduled cloud flow (daily by default).
 
-Use Dataverse **List rows** with your time window and notification guard:
+### Step 2: Query changed rows
 
-- Changed in last window (`Last Change On`)
-- Not already notified for same window (`Last Notified On`)
+Use Dataverse **List rows** to return only changed/unnotified rows for the selected time window.
 
-### 5.3 Condition: send only if rows exist
-
-Condition expression:
+### Step 3: Add condition before sending
 
 ```text
 @greater(length(body('List_rows')?['value']), 0)
 ```
 
-If **Yes** branch:
+If true:
 
-1. Build HTML table with only 3 columns:
-   - Message Center ID or Roadmap ID
-   - Brief Title
-   - Description / Update Details
+1. Build HTML with 3 columns
 2. Send email
-3. Update each sent row `Last Notified On = utcNow()`
+3. Update `Last Notified On = utcNow()` for rows sent
 
-### 5.4 HTML body template (exact 3-column layout)
-
-Use **Compose** (or directly in Send email body):
+### Step 4: Use this HTML structure
 
 ```html
 <h2>Copilot Updates - Change Digest</h2>
@@ -232,54 +233,45 @@ Use **Compose** (or directly in Send email body):
     </tr>
   </thead>
   <tbody>
-    <!-- Populate with dynamic rows from List rows -->
+    <!-- Populate dynamic rows from List rows -->
   </tbody>
 </table>
 ```
 
 ---
 
-## 6) Copilot Studio agent: `Copilot Updates Analyst`
+## Exercise 6 - Configure Copilot Studio agent
 
-### 6.1 Create/confirm agent
+Agent name: `Copilot Updates Analyst`
 
-- Agent name: `Copilot Updates Analyst`
+### Step 1: Add tools
 
-### 6.2 Add tools
+1. Dataverse list rows tool
+2. Send an email (V2)
 
-Add these tools:
-
-1. **Dataverse list rows** (to fetch update records)
-2. **Send an email (V2)** (optional on-demand send from chat)
-
-### 6.3 Add 4 skills and route by user choice
-
-Add these skills:
+### Step 2: Add workflow skills
 
 - `cowork-update-information`
 - `copilot-studio-information`
 - `copilot-information`
 - `other-m365-information`
 
-In instructions, require the user to choose one workflow first, then route to the matching skill.
+### Step 3: Add routing instruction
 
-### 6.4 Email options used in this lab
+Require users to select one workflow first, then route to the matching skill.
 
-Two supported options:
+### Step 4: Configure email action fields
 
-1. **Scheduled email (recommended):** Flow B sends digest automatically (daily/weekly)
-2. **On-demand email from agent:** Agent uses **Send an email (V2)** when user asks
-
-For **Send an email (V2)** in agent/tool actions, use:
+For **Send an email (V2)**:
 
 | Field | Value |
 |---|---|
-| To | Target recipient list |
-| Subject | `Copilot Updates - Summary` (or include date) |
-| Body | HTML digest table (same 3-column format as Flow B) |
+| To | Target recipients |
+| Subject | `Copilot Updates - Summary` (optionally add date) |
+| Body | HTML digest (same 3-column format) |
 | Is HTML | `true` |
 
-Recommended instruction snippet for agent:
+Suggested instruction text:
 
 ```text
 When user asks to email updates, use Send an email (V2) with the same 3-column digest format used by the notifier flow.
@@ -287,57 +279,60 @@ When user asks to email updates, use Send an email (V2) with the same 3-column d
 
 ---
 
-## 7) Switch digest from daily to weekly
-
-For weekly digest:
+## Exercise 7 - Switch digest to weekly
 
 1. Open `Copilot Updates - Daily Change Notifier`
 2. Edit **Recurrence**
 3. Set:
-   - Frequency: `Week`
-   - Interval: `1`
-   - Select weekday/timezone/time
-4. Save and test run
+   - Frequency = `Week`
+   - Interval = `1`
+   - Desired weekday/time/timezone
+4. Save and run a test
 
 ---
 
-## 8) End-to-end validation (run in this order)
+## Exercise 8 - Validate end-to-end
+
+Run in this sequence:
 
 1. Run Collector manually
-2. Confirm rows are inserted/updated in Dataverse
-3. Re-run Collector with same payload (no duplicate rows expected)
-4. Trigger change/new payload and run Collector again (Updated/New states expected)
-5. Run Notifier and verify email contains exactly 3 columns
-6. Confirm `Last Notified On` updated for sent rows
-7. Ask agent for latest updates and verify response is Dataverse-backed
+2. Confirm rows inserted/updated in Dataverse
+3. Re-run Collector with same payload (no duplicates)
+4. Introduce changed data and rerun (Updated/New expected)
+5. Run Notifier and confirm 3-column email output
+6. Confirm `Last Notified On` updates
+7. Ask agent for latest changes and confirm Dataverse-backed results
 
 ---
 
-## Appendix A: Common issues and fixes (not a build step)
+## Appendix A - Common issues and fixes
 
-### A) `Apply_to_each` type String error
-- Cause: loop input entered as text
-- Fix: re-enter expression from Expression tab:
+### A1) `Apply_to_each` input resolves as String
+
+- Cause: expression entered as plain text
+- Fix:
 ```text
 @union(coalesce(body('HTTP')?['value'], json('[]')), coalesce(body('HTTP_1')?['value'], json('[]')))
 ```
 
-### B) `Update a row` recordId null
-- Cause: List rows did not return primary key or Row ID mapped incorrectly
-- Fix:
-  - Include primary key in Select columns
-  - Map Row ID to Dataverse unique identifier token from List rows output
+### A2) `Update a row` fails with null `recordId`
 
-### C) Message Center permission failure
-- Cause: wrong permission mode or no admin consent
+- Cause: primary key not selected or Row ID mapped incorrectly
 - Fix:
-  - Use **Application** permission (`ServiceMessage.Read.All`)
+  - Include primary key in List rows select columns
+  - Map Row ID from Dataverse unique identifier token in List rows output
+
+### A3) Graph Message Center permission errors
+
+- Cause: delegated permission used or admin consent missing
+- Fix:
+  - Use Graph **Application** permission `ServiceMessage.Read.All`
   - Re-grant admin consent
-  - Validate secret is active
+  - Confirm active client secret
 
 ---
 
-## Appendix B: Artifacts used in this lab
+## Appendix B - Artifacts used
 
 - Dataverse table: `Copilot Update`
 - Flow A: `Copilot Updates - Collector`
