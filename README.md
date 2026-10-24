@@ -65,12 +65,16 @@ You need:
 
 ### 5.1 Use one canonical table
 
-We validated duplicate-similar tables existed and standardized on:
+We validated duplicate-similar tables existed and standardized on one table:
 
 - **Table display name:** `Copilot Update`
-- **Logical name:** `cra2f_copilotupdate`
+- **Logical name:** `<YOUR_TABLE_LOGICAL_NAME>` (example: `cra2f_copilotupdates`)
 
 Do not split writes across two similar tables.
+
+Also record your table primary key logical name (you need it for Update row):
+
+- **Primary key logical name:** `<YOUR_TABLE_PRIMARY_KEY>` (example: `cra2f_copilotupdateid`)
 
 ### 5.2 Add `UpdateKey` column
 
@@ -174,18 +178,30 @@ Add **Compose** actions:
 2. `RecordHash`
    - Hash/fingerprint from fields such as title/status/modified/published
 
-### 7.6 Dataverse lookup
+### 7.6 Dataverse lookup (must return primary key)
 
-Add **List rows** against `Copilot Update` table filtered by `UpdateKey`.
+Add **List rows** against your `Copilot Update` table with:
+
+- **Filter rows:**
+  `cra2f_updatekey eq '@{outputs('Compose')}'`
+- **Top count:** `1`
+- **Select columns:** include at least
+  - `<YOUR_TABLE_PRIMARY_KEY>` (example: `cra2f_copilotupdateid`)
+  - `cra2f_recordhash`
+
+Important:
+- If primary key is not returned by List rows, **Update a row** receives null `recordId` and fails.
 
 ### 7.7 Upsert branching
 
 Add **Condition**:
 
-- If row not found -> **Add a new row** (`Change Type = New`)
-- If row exists:
+- If row not found (`length(body('List_rows')?['value']) = 0`) -> **Add a new row** (`Change Type = New`)
+- If row exists (`length(...) > 0`):
   - If hash changed -> **Update row** (`Change Type = Updated`, move prior hash)
   - If hash unchanged -> **Update row** (`Change Type = Unchanged`, refresh `LastSeenOn`)
+
+In **Update a row**, set **Row ID** from the List rows result primary key token (the table "Unique identifier for entity instances"), not from `External Id` and not from a plain text expression.
 
 Recommended mapped fields:
 
@@ -302,6 +318,21 @@ Fix:
 - Verify app permission is **Application** (not delegated).
 - Re-check admin consent and client secret validity.
 
+### Issue E: `Update_a_row` fails with missing `recordId`
+
+Symptoms:
+- Run error: `WorkflowOperationParametersRuntimeMissingValue`
+- Detail: `inputs.parameters ... invalid ... may not be null or empty: 'recordId'`
+
+Cause:
+- **Row ID** in `Update a row` is mapped to the wrong field or an expression that resolves to null.
+- `List rows` did not return the table primary key column.
+
+Fix:
+- In `List rows`, include table primary key in **Select columns**.
+- In `Update a row`, map **Row ID** to the Dataverse row unique identifier from `List rows`.
+- Keep **Top count = 1** because `UpdateKey` is unique.
+
 ---
 
 ## 12. Security and operations guidance
@@ -326,15 +357,16 @@ Completed:
 - Notifier flow scaffolded and started
 - Copilot Studio agent created (`Copilot Updates Analyst`) and tool wiring started
 
-Most recent technical fix:
+Most recent technical fixes:
 
-- Repaired collector loop-expression behavior and restored flow to a saved “ready to go” state during latest pass.
+- Repaired `Apply to each` input so it is a true array expression (not a literal string).
+- Corrected `Update a row` **Row ID** mapping to use the Dataverse record unique identifier returned by `List rows`, resolving null `recordId` failures.
 
 ---
 
 ## 14. Suggested next actions (to finish production readiness)
 
-1. Re-run collector and verify latest run result for full success.
+1. Re-run collector and confirm each branch (`Add`, `Update`, `Unchanged`) works as expected.
 2. Validate dual-source normalization (roadmap + message center) with real payloads.
 3. Finalize notifier’s “already-notified” gating logic.
 4. Complete Copilot Studio tool wiring and publish.
@@ -344,7 +376,7 @@ Most recent technical fix:
 
 ## 15. Appendix: Artifact names used in this lab
 
-- Dataverse table: `Copilot Update` (`cra2f_copilotupdate`)
+- Dataverse table: `Copilot Update` (`<YOUR_TABLE_LOGICAL_NAME>`)
 - Collector flow: `Copilot Updates - Collector`
 - Notifier flow: `Copilot Updates - Daily Change Notifier`
 - Copilot Studio agent: `Copilot Updates Analyst`
