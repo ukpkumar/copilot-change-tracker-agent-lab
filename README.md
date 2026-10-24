@@ -1,4 +1,4 @@
-# End-to-End Lab Guide: Copilot Updates Monitoring with Dataverse, Power Automate, and Copilot Studio
+# Lab Guide: Build a Dataverse + Power Automate + Copilot Studio Copilot Updates Solution
 
 ## 1. What you will build
 
