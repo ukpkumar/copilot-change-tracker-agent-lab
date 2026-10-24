@@ -381,3 +381,69 @@ Most recent technical fixes:
 - Notifier flow: `Copilot Updates - Daily Change Notifier`
 - Copilot Studio agent: `Copilot Updates Analyst`
 - Entra app: `Copilot-Updates-Collector`
+
+---
+
+## 16. Importable solution package (recommended)
+
+Yes. You can (and should) provide this lab as an **importable Power Platform solution** so others can deploy it quickly.
+
+### 16.1 What to include in the solution
+
+Create one solution (for example: `CopilotChangeTrackerSolution`) and include:
+
+- Dataverse table `Copilot Update` with all required columns
+- Alternate key on `UpdateKey`
+- Flow A: `Copilot Updates - Collector`
+- Flow B: `Copilot Updates - Daily Change Notifier`
+- Connection references used by flows
+- Environment variables for tenant-specific values
+
+Recommended environment variables:
+
+- `GraphTenantId`
+- `GraphClientId`
+- `GraphClientSecret` (secret type)
+- `RoadmapApiUrl`
+- `MessageCenterApiUrl`
+- `CollectorScheduleHours`
+- `NotifierScheduleTime`
+
+### 16.2 Export from source environment
+
+1. Open **Solutions** in Power Apps.
+2. Add/verify all components above are inside the same solution.
+3. Click **Publish all customizations**.
+4. Click **Export**.
+5. Choose:
+   - **Managed** for consumers (recommended for production-style import)
+   - **Unmanaged** for contributors (recommended for dev customization)
+6. Download the `.zip` package.
+
+### 16.3 Import into target environment
+
+1. In target environment, go to **Solutions** > **Import solution**.
+2. Upload the `.zip`.
+3. During import:
+   - map all **connection references**
+   - provide values for all **environment variables**
+4. Complete import, then open each flow and **Turn on**.
+5. Run collector once manually for seeding.
+6. Run notifier to validate email output.
+
+### 16.4 Post-import validation checklist
+
+- Collector run succeeds end-to-end
+- Upsert works (`New`, `Updated`, `Unchanged`)
+- No duplicate records for same `UpdateKey`
+- Notifier sends only changed/new items in window
+- `LastNotifiedOn` updates after email send
+
+### 16.5 Publishing this package in GitHub
+
+In this repo, add the exported zip under a folder such as:
+
+- `solution/CopilotChangeTrackerSolution_Managed.zip`
+- `solution/CopilotChangeTrackerSolution_Unmanaged.zip`
+
+Then update this README with those exact file names so users can import directly.
