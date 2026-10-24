@@ -29,6 +29,19 @@ By the end of this lab, you will have:
 - `Copilot Updates - Daily Change Notifier` flow sending digest emails
 - `Copilot Updates Analyst` agent configured with Dataverse and email tools
 
+## Solution architecture diagram
+
+```mermaid
+flowchart LR
+  A[Roadmap API] --> C[Flow A: Collector]
+  B[Graph Message Center] --> C
+  C --> D[(Dataverse: Copilot Update table)]
+  D --> E[Flow B: Daily/Weekly Notifier]
+  E --> F[Email digest: 3 columns]
+  D --> G[Copilot Studio Agent]
+  G --> H[User asks for updates]
+```
+
 ---
 
 ## Table of contents
