@@ -1,4 +1,4 @@
-# Lab Guide: Build a Dataverse + Power Automate + Copilot Studio Copilot Updates Solution
+# End-to-End Lab Guide: Copilot Updates Monitoring with Dataverse, Power Automate, and Copilot Studio
 
 ## 1. What you will build
 
@@ -349,4 +349,3 @@ Most recent technical fix:
 - Notifier flow: `Copilot Updates - Daily Change Notifier`
 - Copilot Studio agent: `Copilot Updates Analyst`
 - Entra app: `Copilot-Updates-Collector`
-
