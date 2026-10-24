@@ -38,14 +38,14 @@ Why this split:
 
 ---
 
-## 3. Environment and tenant context used
+## 3. Environment and tenant context template
 
-Use your own values, but these are the values used during this build:
+Use placeholders like the following and replace with your own values:
 
-- **Account:** `AadiK@DIAx72705336.OnMicrosoft.com`
-- **Tenant ID:** `a199beb0-50ca-457a-86f2-46d83e0cb767`
-- **Environment:** `Default-a199beb0-50ca-457a-86f2-46d83e0cb767` (Zava default)
-- **Dataverse Web API:** `https://orga16d493e.api.crm.dynamics.com/api/data/v9.2`
+- **Account:** `<USER_EMAIL>`
+- **Tenant ID:** `<TENANT_ID>`
+- **Environment:** `<POWER_PLATFORM_ENVIRONMENT_NAME>`
+- **Dataverse Web API:** `https://<YOUR_ORG>.api.crm.dynamics.com/api/data/v9.2`
 
 ---
 
